@@ -1,0 +1,6 @@
+aiohttp
+eth-keys
+bech32
+base58
+psutil
+eth_account
